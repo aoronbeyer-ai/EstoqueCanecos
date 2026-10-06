@@ -80,6 +80,75 @@ class StockIntegrationTest(unittest.TestCase):
                 self.assertEqual(caught.exception.code, 400)
         self.assertEqual(self.request('/api/state')['products'], [])
 
+    def send(self, quantity=6, price='22.50'):
+        return self.request('/api/consignments', dict(store_id=1, product_id=1, quantity=quantity, price=price))
+
+    def store_event(self, kind, quantity):
+        return self.request('/api/store-events', dict(consignment_id=1, kind=kind, quantity=quantity))
+
+    def setup_store(self):
+        self.register()
+        self.move('entry', 10)
+        self.request('/api/stores', dict(name='Loja A'))
+
+    def test_consignment_sales_return_partial_payment(self):
+        self.setup_store()
+        self.send()
+        state = self.request('/api/state')
+        self.assertEqual(state['products'][0]['stock'], 4)
+        self.assertEqual(state['stores'][0]['balance'], 0)
+        self.store_event('sale', 3)
+        self.store_event('return', 2)
+        for value in ['20.00', '15.00']:
+            self.request('/api/store-events', dict(store_id=1, kind='payment', amount=value))
+        state = self.request('/api/state')
+        self.assertEqual(state['products'][0]['stock'], 6)
+        self.assertEqual(state['consignments'][0]['remaining'], 1)
+        store = state['stores'][0]
+        self.assertEqual((store['charged'], store['paid'], store['balance']), (6750, 3500, 3250))
+        self.assertEqual([e['balance'] for e in state['store_events']], [0, 6750, 6750, 4750, 3250])
+        sale = next(e for e in state['store_events'] if e['kind'] == 'sale')
+        self.assertEqual(sale['unit_cost'] * sale['quantity'], 3000)
+        self.request('/api/stores', dict(name='Loja B'))
+        self.request('/api/store-events', dict(store_id=2, kind='payment', amount='5.00'))
+        stores = self.request('/api/state')['stores']
+        self.assertEqual(stores[0]['balance'], 3250)
+        self.assertEqual(stores[1]['balance'], -500)
+
+    def test_consignment_limits_are_atomic(self):
+        self.setup_store()
+        self.send()
+        for action in [lambda: self.send(5), lambda: self.move('public', 5), lambda: self.store_event('sale', 7), lambda: self.store_event('return', 7)]:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                action()
+            self.assertEqual(caught.exception.code, 400)
+        self.store_event('sale', 6)
+        with self.assertRaises(urllib.error.HTTPError):
+            self.store_event('return', 1)
+        state = self.request('/api/state')
+        self.assertEqual(state['products'][0]['stock'], 4)
+        self.assertEqual(len(state['consignments']), 1)
+        self.assertEqual(len(state['store_events']), 2)
+
+    def test_freight_and_cash_exclude_unpaid_store_sales(self):
+        self.setup_store()
+        self.send()
+        self.store_event('sale', 2)
+        self.move('public', 1)
+        self.request('/api/expenses', dict(amount='12.50', note='Frete inicial'))
+        self.request('/api/expenses', dict(amount='7.50', note='Segundo frete'))
+        self.request('/api/store-events', dict(store_id=1, kind='payment', amount='10.00'))
+        for value in ['0', '-1', 'NaN', '0.001']:
+            with self.assertRaises(urllib.error.HTTPError):
+                self.request('/api/expenses', dict(amount=value))
+        state = self.request('/api/state')
+        purchases = sum(m['cost'] * m['quantity'] for m in state['movements'] if m['kind'] == 'entry')
+        freight = sum(e['amount'] for e in state['expenses'])
+        received = sum(m['price'] * m['quantity'] for m in state['movements'] if m['kind'] in ('public', 'choir')) + sum(s['paid'] for s in state['stores'])
+        self.assertEqual((purchases, freight, received, received-purchases-freight), (10000, 2000, 3500, -8500))
+        self.assertEqual(state['stores'][0]['balance'], 3500)
+        self.assertTrue(all(e['created_at'] for e in state['expenses']))
+
     def test_page_is_served(self):
         with urllib.request.urlopen(self.url + '/', timeout=5) as response:
             self.assertIn('Estoque de canecos', response.read().decode())

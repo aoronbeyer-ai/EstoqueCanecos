@@ -10,7 +10,11 @@ def connect():
     return db
 with connect() as db:
     db.executescript('''CREATE TABLE IF NOT EXISTS products(id INTEGER PRIMARY KEY, name TEXT NOT NULL, cost INTEGER NOT NULL, public_price INTEGER NOT NULL, choir_price INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS movements(id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL REFERENCES products(id), kind TEXT NOT NULL, quantity INTEGER NOT NULL, cost INTEGER NOT NULL, price INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));''')
+    CREATE TABLE IF NOT EXISTS movements(id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL REFERENCES products(id), kind TEXT NOT NULL, quantity INTEGER NOT NULL, cost INTEGER NOT NULL, price INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
+    CREATE TABLE IF NOT EXISTS expenses(id INTEGER PRIMARY KEY, amount INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
+    CREATE TABLE IF NOT EXISTS stores(id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS consignments(id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id), product_id INTEGER NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL, cost INTEGER NOT NULL, price INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
+    CREATE TABLE IF NOT EXISTS store_events(id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id), consignment_id INTEGER REFERENCES consignments(id), kind TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0, amount INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));''')
 def amount(value):
     from decimal import Decimal, InvalidOperation
     try:
@@ -21,6 +25,12 @@ def amount(value):
 def quantity(value):
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0: raise ValueError('Quantidade deve ser um número inteiro maior que zero.')
     return value
+def available(db, product_id):
+    local = db.execute("SELECT COALESCE(SUM(CASE WHEN kind='entry' THEN quantity ELSE -quantity END),0) FROM movements WHERE product_id=?", (product_id,)).fetchone()[0]
+    sent = db.execute('SELECT COALESCE(SUM(quantity),0) FROM consignments WHERE product_id=?', (product_id,)).fetchone()[0]
+    returned = db.execute("SELECT COALESCE(SUM(e.quantity),0) FROM store_events e JOIN consignments c ON c.id=e.consignment_id WHERE c.product_id=? AND e.kind='return'", (product_id,)).fetchone()[0]
+    return local - sent + returned
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs): super().__init__(*args, directory=str(Path(__file__).parent / 'static'), **kwargs)
     def reply(self, data, status=200):
@@ -31,7 +41,25 @@ class Handler(SimpleHTTPRequestHandler):
         with connect() as db:
             products = [dict(r) for r in db.execute("SELECT p.*, COALESCE(SUM(CASE WHEN m.kind='entry' THEN m.quantity ELSE -m.quantity END),0) stock FROM products p LEFT JOIN movements m ON p.id=m.product_id GROUP BY p.id ORDER BY p.name")]
             movements = [dict(r) for r in db.execute('SELECT m.*, p.name FROM movements m JOIN products p ON p.id=m.product_id ORDER BY m.id DESC')]
-        self.reply(dict(products=products,movements=movements))
+            expenses = [dict(r) for r in db.execute('SELECT * FROM expenses ORDER BY id DESC')]
+            for product in products:
+                product['stock'] = available(db, product['id'])
+            stores = [dict(r) for r in db.execute('SELECT * FROM stores ORDER BY name')]
+            consignments = [dict(r) for r in db.execute('SELECT c.*, p.name, s.name store_name FROM consignments c JOIN products p ON p.id=c.product_id JOIN stores s ON s.id=c.store_id ORDER BY c.id DESC')]
+            events = [dict(r) for r in db.execute('SELECT e.*, s.name store_name, p.name product_name, c.cost unit_cost FROM store_events e JOIN stores s ON s.id=e.store_id LEFT JOIN consignments c ON c.id=e.consignment_id LEFT JOIN products p ON p.id=c.product_id ORDER BY e.id')]
+            for shipment in consignments:
+                shipment['remaining'] = shipment['quantity'] - sum(e['quantity'] for e in events if e['consignment_id'] == shipment['id'] and e['kind'] in ('sale', 'return'))
+            for store in stores:
+                ledger = [e for e in events if e['store_id'] == store['id']]
+                store['charged'] = sum(e['amount'] for e in ledger if e['kind'] == 'sale')
+                store['paid'] = sum(e['amount'] for e in ledger if e['kind'] == 'payment')
+                store['balance'] = store['charged'] - store['paid']
+                store['consigned'] = sum(c['remaining'] for c in consignments if c['store_id'] == store['id'])
+                balance = 0
+                for event in ledger:
+                    balance += event['amount'] if event['kind'] == 'sale' else -event['amount'] if event['kind'] == 'payment' else 0
+                    event['balance'] = balance
+        self.reply(dict(products=products,movements=movements,stores=stores,consignments=consignments,store_events=events,expenses=expenses))
     def do_POST(self):
         try:
             data = json.loads(self.rfile.read(int(self.headers.get('Content-Length',0))))
@@ -41,12 +69,46 @@ class Handler(SimpleHTTPRequestHandler):
                     name = str(data.get('name','')).strip()
                     if not name: raise ValueError('Informe o nome do caneco.')
                     db.execute('INSERT INTO products(name,cost,public_price,choir_price) VALUES(?,?,?,?)',(name,amount(data['cost']),amount(data['public_price']),amount(data['choir_price'])))
+                elif self.path == '/api/expenses':
+                    value = amount(data['amount'])
+                    if value <= 0: raise ValueError('Frete deve ser maior que zero.')
+                    db.execute('INSERT INTO expenses(amount,note) VALUES(?,?)', (value, str(data.get('note', '')).strip()))
+                elif self.path == '/api/stores':
+                    name = str(data.get('name', '')).strip()
+                    if not name: raise ValueError('Informe o nome da loja.')
+                    db.execute('INSERT INTO stores(name) VALUES(?)', (name,))
+                elif self.path == '/api/consignments':
+                    store = db.execute('SELECT id FROM stores WHERE id=?', (data['store_id'],)).fetchone()
+                    product = db.execute('SELECT * FROM products WHERE id=?', (data['product_id'],)).fetchone()
+                    if not store or not product: raise ValueError('Loja ou caneco não encontrado.')
+                    q = quantity(data['quantity']); price = amount(data['price'])
+                    if q > available(db, product['id']): raise ValueError('Estoque insuficiente para consignação.')
+                    note = str(data.get('note', '')).strip()
+                    shipment = db.execute('INSERT INTO consignments(store_id,product_id,quantity,cost,price,note) VALUES(?,?,?,?,?,?)', (store['id'], product['id'], q, product['cost'], price, note)).lastrowid
+                    db.execute("INSERT INTO store_events(store_id,consignment_id,kind,quantity,note) VALUES(?,?,'send',?,?)", (store['id'], shipment, q, note))
+                elif self.path == '/api/store-events':
+                    kind = data['kind']; note = str(data.get('note', '')).strip()
+                    if kind == 'payment':
+                        store = db.execute('SELECT id FROM stores WHERE id=?', (data['store_id'],)).fetchone()
+                        if not store: raise ValueError('Loja não encontrada.')
+                        paid = amount(data['amount'])
+                        if paid <= 0: raise ValueError('Pagamento deve ser maior que zero.')
+                        db.execute("INSERT INTO store_events(store_id,kind,amount,note) VALUES(?,'payment',?,?)", (store['id'], paid, note))
+                    elif kind in ('sale', 'return'):
+                        c = db.execute('SELECT * FROM consignments WHERE id=?', (data['consignment_id'],)).fetchone()
+                        if not c: raise ValueError('Remessa não encontrada.')
+                        q = quantity(data['quantity'])
+                        consumed = db.execute("SELECT COALESCE(SUM(quantity),0) FROM store_events WHERE consignment_id=? AND kind IN ('sale','return')", (c['id'],)).fetchone()[0]
+                        if q > c['quantity'] - consumed: raise ValueError('Quantidade superior aos canecos disponíveis nesta remessa.')
+                        charge = q * c['price'] if kind == 'sale' else 0
+                        db.execute('INSERT INTO store_events(store_id,consignment_id,kind,quantity,amount,note) VALUES(?,?,?,?,?,?)', (c['store_id'], c['id'], kind, q, charge, note))
+                    else: raise ValueError('Operação da loja inválida.')
                 elif self.path == '/api/movements':
                     p = db.execute('SELECT * FROM products WHERE id=?',(data['product_id'],)).fetchone()
                     if not p: raise ValueError('Caneco não encontrado.')
                     kind = data['kind']; q = quantity(data['quantity'])
                     if kind not in ('entry','public','choir','gift'): raise ValueError('Tipo de movimentação inválido.')
-                    stock = db.execute("SELECT COALESCE(SUM(CASE WHEN kind='entry' THEN quantity ELSE -quantity END),0) FROM movements WHERE product_id=?",(p['id'],)).fetchone()[0]
+                    stock = available(db, p['id'])
                     if kind != 'entry' and q > stock: raise ValueError('Estoque insuficiente para esta baixa.')
                     cost = p['cost']; price = p['public_price'] if kind == 'public' else p['choir_price'] if kind == 'choir' else 0
                     db.execute('INSERT INTO movements(product_id,kind,quantity,cost,price,note) VALUES(?,?,?,?,?,?)',(p['id'],kind,q,cost,price,str(data.get('note','')).strip()))

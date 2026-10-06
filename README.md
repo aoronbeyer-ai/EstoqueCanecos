@@ -26,3 +26,11 @@ python3 -m unittest discover -s tests -v
 ```
 
 Os testes usam banco temporário e verificam vendas, brindes, cálculos financeiros, bloqueio de estoque insuficiente e validação dos valores.
+
+## Consignação e conta corrente
+
+Cadastre a loja e registre o envio, com quantidade e preço por unidade combinado. O envio reduz o estoque disponível, mas não gera receita ou dívida. Confirme as unidades vendidas para gerar a cobrança e reconhecer receita e custo. Registre devoluções para repor o estoque. Registre cada pagamento recebido, inclusive parcelas ou antecipações. O extrato por loja mostra os lançamentos e o saldo; saldo negativo indica crédito. Cada remessa preserva seu preço e custo originais.
+
+## Fretes e dinheiro recebido
+
+Registre os fretes pagos no campo geral. O painel mostra compras (entradas × custo unitário), fretes, total gasto, dinheiro recebido e recebido menos gasto. Entradas são consideradas compras pagas; vendas diretas são consideradas recebidas. Para lojas, apenas pagamentos entram no dinheiro recebido. A receita das vendas confirmadas ainda pendentes fica separada do caixa. O resultado após brindes e fretes desconta custos vendidos, brindes e fretes, enquanto o caixa desconta todas as compras, inclusive unidades ainda em estoque. O histórico mostra a data e hora dos registros; esta versão não permite informar datas retroativas.
