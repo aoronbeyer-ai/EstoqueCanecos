@@ -39,3 +39,14 @@ function renderCash(state) {
  document.querySelector('#cash-cards').innerHTML=[['Gasto com compras',purchases],['Gasto com fretes',freight],['Total gasto',purchases+freight],['Dinheiro recebido',received],['Recebido menos gasto',received-purchases-freight],['Resultado após brindes e fretes',revenue-soldCost-freight]].map(([label,value])=>`<div class="card"><span>${label}</span><strong>${money(value)}</strong></div>`).join('');
  document.querySelector('#freights').innerHTML=state.expenses.map(e=>`<tr><td>${new Date(e.created_at).toLocaleString('pt-BR')}</td><td>${money(e.amount)}</td><td>${esc(e.note)}</td></tr>`).join('')||'<tr><td colspan="3">Nenhum frete registrado.</td></tr>';
 }
+
+function renderProductStock(state) {
+ const consignedByProduct = new Map();
+ for (const shipment of state.consignments) {
+  consignedByProduct.set(shipment.product_id, (consignedByProduct.get(shipment.product_id) || 0) + shipment.remaining);
+ }
+ document.querySelector('#product-cards').innerHTML = state.products.map(product => {
+  const consigned = consignedByProduct.get(product.id) || 0;
+  return `<article class="card"><h3>${esc(product.name)}</h3><span>Disponível para venda</span><strong>${product.stock} un.</strong><p>Nas lojas (consignado): ${consigned} un.</p><span>Total em estoque: ${product.stock + consigned} un.</span></article>`;
+ }).join('') || '<p class="empty">Nenhum produto cadastrado. Cadastre um tipo de caneco para acompanhar seu estoque aqui.</p>';
+}
