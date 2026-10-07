@@ -50,6 +50,7 @@ function renderCash(state) {
  const received=direct+state.stores.reduce((sum,s)=>sum+s.paid,0);
  const soldCost=state.movements.filter(m=>['public','choir','gift'].includes(m.kind)).reduce((sum,m)=>sum+m.cost*m.quantity,0)+state.store_events.filter(e=>['sale','gift'].includes(e.kind)).reduce((sum,e)=>sum+e.unit_cost*e.quantity,0);
  const revenue=direct+state.stores.reduce((sum,s)=>sum+s.charged,0);
+ document.querySelector('#cash-overview').innerHTML=[['Total gasto',purchases+freight],['Dinheiro recebido',received],['Recebido menos gasto',received-purchases-freight]].map(([label,value])=>`<div class="card"><span>${label}</span><strong>${money(value)}</strong></div>`).join('');
  document.querySelector('#cash-cards').innerHTML=[['Gasto com compras',purchases],['Gasto com fretes',freight],['Total gasto',purchases+freight],['Dinheiro recebido',received],['Recebido menos gasto',received-purchases-freight],['Resultado após brindes e fretes',revenue-soldCost-freight]].map(([label,value])=>`<div class="card"><span>${label}</span><strong>${money(value)}</strong></div>`).join('');
  document.querySelector('#freights').innerHTML=state.expenses.map(e=>`<tr><td>${new Date(e.created_at).toLocaleString('pt-BR')}</td><td>${money(e.amount)}</td><td>${esc(e.note)}</td></tr>`).join('')||'<tr><td colspan="3">Nenhum frete registrado.</td></tr>';
 }
@@ -72,6 +73,7 @@ window.addEventListener('DOMContentLoaded',()=>{
  document.querySelector('#store-summary').onclick=event=>{
   const button=event.target.closest('button[data-edit-store]');if(!button)return;
   document.querySelector('#edit-store-select').value=button.dataset.editStore;fillStoreEditor();
+  showArea('registrations');
   document.querySelector('#store-edit').scrollIntoView({behavior:'smooth',block:'center'});
   document.querySelector('#edit-store-gifts').focus({preventScroll:true});
  };

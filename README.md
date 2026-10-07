@@ -43,4 +43,10 @@ As quantidades continuam registradas em canecos e mostram ao lado as caixas comp
 
 ## Editar lojas
 
-Em **Lojas e consignação → Editar loja existente**, selecione a loja, ajuste o nome e marque **Permitir brindes sem cobrança**, depois clique em **Salvar alterações da loja**. O botão **Editar loja** no resumo também abre esse formulário. A edição preserva as remessas, cobranças e pagamentos.
+Em **Cadastros → Editar loja**, selecione a loja, ajuste o nome e marque **Permitir brindes sem cobrança**, depois clique em **Salvar alterações da loja**. O botão **Editar loja** no resumo também abre esse formulário. A edição preserva as remessas, cobranças e pagamentos.
+
+## Áreas da interface
+
+A aplicação abre em **Movimentações**, com vendas, entradas, brindes, consignações, pagamentos e fretes. **Painel** concentra o estoque por produto e todos os resultados. **Cadastros** reúne os canecos e o cadastro e edição de lojas. **Histórico** reúne as movimentações, fretes e a conta corrente por loja.
+
+Total gasto, dinheiro recebido e recebido menos gasto permanecem visíveis em todas as áreas. Valores negativos são destacados em vermelho; valores monetários são exibidos na mesma linha. Os formulários se adaptam à largura da tela, com uma coluna no celular.
