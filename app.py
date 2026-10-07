@@ -38,6 +38,10 @@ def available(db, product_id):
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs): super().__init__(*args, directory=str(Path(__file__).parent / 'static'), **kwargs)
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store')
+        super().end_headers()
+
     def reply(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode()
         self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -82,6 +86,12 @@ class Handler(SimpleHTTPRequestHandler):
                     name = str(data.get('name', '')).strip()
                     if not name: raise ValueError('Informe o nome da loja.')
                     db.execute('INSERT INTO stores(name,allow_gifts) VALUES(?,?)', (name, permission(data.get('allow_gifts', False))))
+                elif self.path == '/api/stores/update':
+                    name = str(data.get('name', '')).strip()
+                    if not name: raise ValueError('Informe o nome da loja.')
+                    allowed = permission(data['allow_gifts'])
+                    if not db.execute('SELECT id FROM stores WHERE id=?', (data['store_id'],)).fetchone(): raise ValueError('Loja não encontrada.')
+                    db.execute('UPDATE stores SET name=?,allow_gifts=? WHERE id=?', (name, allowed, data['store_id']))
                 elif self.path == '/api/store-permissions':
                     allowed = permission(data['allow_gifts'])
                     if not db.execute('SELECT id FROM stores WHERE id=?', (data['store_id'],)).fetchone(): raise ValueError('Loja não encontrada.')

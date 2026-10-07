@@ -40,3 +40,7 @@ Registre os fretes pagos no campo geral. O painel mostra compras (entradas × cu
 No cadastro da loja, marque **Permitir brindes sem cobrança** quando autorizado. A permissão também pode ser alterada no resumo por loja. Lojas existentes ficam bloqueadas por padrão após a atualização. Na remessa, escolha **Brinde sem cobrança**: as unidades saem da consignação, não geram dívida ou receita e seu custo entra nos brindes e no resultado após brindes e fretes. Desativar a permissão impede novos brindes, preservando o histórico anterior.
 
 As quantidades continuam registradas em canecos e mostram ao lado as caixas completas de 12 e as unidades restantes (por exemplo, 27 unidades = 2 caixas + 3 canecos). A conversão aparece no dashboard, tabelas, históricos, seleção de remessas e durante a digitação de quantidades.
+
+## Editar lojas
+
+Em **Lojas e consignação → Editar loja existente**, selecione a loja, ajuste o nome e marque **Permitir brindes sem cobrança**, depois clique em **Salvar alterações da loja**. O botão **Editar loja** no resumo também abre esse formulário. A edição preserva as remessas, cobranças e pagamentos.

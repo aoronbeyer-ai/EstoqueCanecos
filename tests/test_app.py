@@ -185,6 +185,29 @@ class StockIntegrationTest(unittest.TestCase):
             self.request('/api/store-permissions', dict(store_id=1, allow_gifts='false'))
         self.assertEqual(self.request('/api/state')['stores'][0]['allow_gifts'], 1)
 
+    def test_store_edit_preserves_account_and_shipments(self):
+        self.setup_store()
+        self.send()
+        self.store_event('sale', 2)
+        self.request('/api/stores/update', dict(store_id=1, name='Novo nome', allow_gifts=True))
+        state = self.request('/api/state')
+        self.assertEqual(len(state['stores']), 1)
+        store = state['stores'][0]
+        self.assertEqual((store['id'], store['name'], store['allow_gifts'], store['balance']), (1, 'Novo nome', 1, 4500))
+        self.assertEqual(state['consignments'][0]['store_name'], 'Novo nome')
+        self.store_event('gift', 1)
+        for data in [dict(store_id=1, name='', allow_gifts=False), dict(store_id=1, name='Outra', allow_gifts='false'), dict(store_id=999, name='Outra', allow_gifts=False)]:
+            with self.assertRaises(urllib.error.HTTPError):
+                self.request('/api/stores/update', data)
+        store = self.request('/api/state')['stores'][0]
+        self.assertEqual((store['name'], store['allow_gifts'], store['balance']), ('Novo nome', 1, 4500))
+
+    def test_interface_and_api_disable_stale_cache(self):
+        for path in ['/', '/stores.js', '/api/state']:
+            with self.subTest(path=path):
+                with urllib.request.urlopen(self.url + path) as response:
+                    self.assertEqual(response.headers['Cache-Control'], 'no-store')
+
     def test_page_is_served(self):
         with urllib.request.urlopen(self.url + '/', timeout=5) as response:
             self.assertIn('Estoque de canecos', response.read().decode())
