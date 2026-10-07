@@ -50,3 +50,23 @@ Em **Cadastros → Editar loja**, selecione a loja, ajuste o nome e marque **Per
 A aplicação abre em **Movimentações**, com vendas, entradas, brindes, consignações, pagamentos e fretes. **Painel** concentra o estoque por produto e todos os resultados. **Cadastros** reúne os canecos e o cadastro e edição de lojas. **Histórico** reúne as movimentações, fretes e a conta corrente por loja.
 
 Total gasto, dinheiro recebido e recebido menos gasto permanecem visíveis em todas as áreas. Valores negativos são destacados em vermelho; valores monetários são exibidos na mesma linha. Os formulários se adaptam à largura da tela, com uma coluna no celular.
+
+## Perguntas sobre os dados
+
+A aba **Perguntas** permite escrever consultas locais, sem chave de API, sem custo por uso e sem enviar os registros para serviços externos. Há exemplos clicáveis e filtros opcionais de data, produto, loja e canal. As consultas apenas leem os registros atuais.
+
+Exemplos:
+
+- Quantos canecos preciso vender para empatar com o custo?
+- Qual loja vendeu mais em outubro de 2026?
+- Qual produto tem melhor rentabilidade? Qual loja tem melhor rentabilidade?
+- Liste os canecos vendidos em 07/10/2026 ou entre 01/10/2026 e 07/10/2026.
+- Qual mês, semana ou dia mais vendeu?
+- Quanto já recebemos e quanto falta receber das lojas?
+- Quantos canecos temos em estoque? Quanto gastamos com brindes?
+
+**Critérios:** vendas incluem as diretas e as confirmadas pelas lojas; envios, devoluções, brindes e pagamentos não contam como vendas. Rentabilidade compara a margem bruta das vendas usando seus preços e custos históricos, sem ratear fretes ou brindes. Recuperação do investimento calcula compras mais fretes menos dinheiro recebido, e simula quantas unidades adicionais vender por produto e canal, com arredondamento para cima. As simulações são alternativas, consideram apenas estoque disponível e presumem pagamento integral, sem novas compras. Esse equilíbrio de caixa não substitui o cálculo contábil de custos fixos e margem de contribuição.
+
+Datas são interpretadas no fuso de Brasília. As listas usam as datas de registro, e vendas consignadas usam a data da confirmação. São aceitos DD/MM/AAAA, AAAA-MM-DD, meses com ano, hoje, ontem e últimos N dias. Saldo de loja e estoque são atuais; a interface explica quando um indicador não é filtrado retroativamente. Use filtros para indicar sem ambiguidade um produto ou loja.
+
+A interpretação local cobre esses temas e suas variações usuais; não responde a qualquer pergunta irrestrita nem executa instruções para alterar os dados. Perguntas não reconhecidas pedem reformulação.

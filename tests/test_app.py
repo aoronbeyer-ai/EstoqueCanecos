@@ -208,6 +208,22 @@ class StockIntegrationTest(unittest.TestCase):
                 with urllib.request.urlopen(self.url + path) as response:
                     self.assertEqual(response.headers['Cache-Control'], 'no-store')
 
+    def test_question_api_uses_live_data_without_mutating_database(self):
+        self.setup_store()
+        self.send()
+        self.store_event('sale', 2)
+        before=self.request('/api/state')
+        result=self.request('/api/questions',dict(question='Qual loja vendeu mais?'))
+        self.assertTrue(result['supported'])
+        self.assertEqual(result['rows'][0][:3],['Loja A',2,4500])
+        self.assertEqual(before,self.request('/api/state'))
+        result=self.request('/api/questions',dict(question='Vendas',filters=dict(store_id=1)))
+        self.assertEqual(result['metrics'][0]['value'],2)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.request('/api/questions',dict(question='Vendas em 31/02/2026'))
+        self.assertEqual(caught.exception.code,400)
+        self.assertEqual(before,self.request('/api/state'))
+
     def test_page_is_served(self):
         with urllib.request.urlopen(self.url + '/', timeout=5) as response:
             self.assertIn('Estoque de canecos', response.read().decode())

@@ -1,6 +1,7 @@
 import json, sqlite3, os
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from analytics import answer_question
 
 DB = os.environ.get('ESTOQUE_DB', 'estoque.sqlite3')
 def connect():
@@ -36,6 +37,31 @@ def available(db, product_id):
     returned = db.execute("SELECT COALESCE(SUM(e.quantity),0) FROM store_events e JOIN consignments c ON c.id=e.consignment_id WHERE c.product_id=? AND e.kind='return'", (product_id,)).fetchone()[0]
     return local - sent + returned
 
+def read_state():
+    with connect() as db:
+        db.execute('BEGIN')
+        products = [dict(r) for r in db.execute("SELECT p.*, COALESCE(SUM(CASE WHEN m.kind='entry' THEN m.quantity ELSE -m.quantity END),0) stock FROM products p LEFT JOIN movements m ON p.id=m.product_id GROUP BY p.id ORDER BY p.name")]
+        movements = [dict(r) for r in db.execute('SELECT m.*, p.name FROM movements m JOIN products p ON p.id=m.product_id ORDER BY m.id DESC')]
+        expenses = [dict(r) for r in db.execute('SELECT * FROM expenses ORDER BY id DESC')]
+        for product in products:
+            product['stock'] = available(db, product['id'])
+        stores = [dict(r) for r in db.execute('SELECT * FROM stores ORDER BY name')]
+        consignments = [dict(r) for r in db.execute('SELECT c.*, p.name, s.name store_name FROM consignments c JOIN products p ON p.id=c.product_id JOIN stores s ON s.id=c.store_id ORDER BY c.id DESC')]
+        events = [dict(r) for r in db.execute('SELECT e.*, s.name store_name, p.name product_name, c.cost unit_cost FROM store_events e JOIN stores s ON s.id=e.store_id LEFT JOIN consignments c ON c.id=e.consignment_id LEFT JOIN products p ON p.id=c.product_id ORDER BY e.id')]
+        for shipment in consignments:
+            shipment['remaining'] = shipment['quantity'] - sum(e['quantity'] for e in events if e['consignment_id'] == shipment['id'] and e['kind'] in ('sale', 'return', 'gift'))
+        for store in stores:
+            ledger = [e for e in events if e['store_id'] == store['id']]
+            store['charged'] = sum(e['amount'] for e in ledger if e['kind'] == 'sale')
+            store['paid'] = sum(e['amount'] for e in ledger if e['kind'] == 'payment')
+            store['balance'] = store['charged'] - store['paid']
+            store['consigned'] = sum(c['remaining'] for c in consignments if c['store_id'] == store['id'])
+            balance = 0
+            for event in ledger:
+                balance += event['amount'] if event['kind'] == 'sale' else -event['amount'] if event['kind'] == 'payment' else 0
+                event['balance'] = balance
+    return dict(products=products,movements=movements,stores=stores,consignments=consignments,store_events=events,expenses=expenses)
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs): super().__init__(*args, directory=str(Path(__file__).parent / 'static'), **kwargs)
     def end_headers(self):
@@ -47,31 +73,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         if self.path != '/api/state': return super().do_GET()
-        with connect() as db:
-            products = [dict(r) for r in db.execute("SELECT p.*, COALESCE(SUM(CASE WHEN m.kind='entry' THEN m.quantity ELSE -m.quantity END),0) stock FROM products p LEFT JOIN movements m ON p.id=m.product_id GROUP BY p.id ORDER BY p.name")]
-            movements = [dict(r) for r in db.execute('SELECT m.*, p.name FROM movements m JOIN products p ON p.id=m.product_id ORDER BY m.id DESC')]
-            expenses = [dict(r) for r in db.execute('SELECT * FROM expenses ORDER BY id DESC')]
-            for product in products:
-                product['stock'] = available(db, product['id'])
-            stores = [dict(r) for r in db.execute('SELECT * FROM stores ORDER BY name')]
-            consignments = [dict(r) for r in db.execute('SELECT c.*, p.name, s.name store_name FROM consignments c JOIN products p ON p.id=c.product_id JOIN stores s ON s.id=c.store_id ORDER BY c.id DESC')]
-            events = [dict(r) for r in db.execute('SELECT e.*, s.name store_name, p.name product_name, c.cost unit_cost FROM store_events e JOIN stores s ON s.id=e.store_id LEFT JOIN consignments c ON c.id=e.consignment_id LEFT JOIN products p ON p.id=c.product_id ORDER BY e.id')]
-            for shipment in consignments:
-                shipment['remaining'] = shipment['quantity'] - sum(e['quantity'] for e in events if e['consignment_id'] == shipment['id'] and e['kind'] in ('sale', 'return', 'gift'))
-            for store in stores:
-                ledger = [e for e in events if e['store_id'] == store['id']]
-                store['charged'] = sum(e['amount'] for e in ledger if e['kind'] == 'sale')
-                store['paid'] = sum(e['amount'] for e in ledger if e['kind'] == 'payment')
-                store['balance'] = store['charged'] - store['paid']
-                store['consigned'] = sum(c['remaining'] for c in consignments if c['store_id'] == store['id'])
-                balance = 0
-                for event in ledger:
-                    balance += event['amount'] if event['kind'] == 'sale' else -event['amount'] if event['kind'] == 'payment' else 0
-                    event['balance'] = balance
-        self.reply(dict(products=products,movements=movements,stores=stores,consignments=consignments,store_events=events,expenses=expenses))
+        self.reply(read_state())
     def do_POST(self):
         try:
             data = json.loads(self.rfile.read(int(self.headers.get('Content-Length',0))))
+            if self.path == '/api/questions':
+                return self.reply(answer_question(read_state(), data.get('question', ''), data.get('filters', {})))
             with connect() as db:
                 db.execute('BEGIN IMMEDIATE')
                 if self.path == '/api/products':
