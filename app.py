@@ -15,6 +15,11 @@ with connect() as db:
     CREATE TABLE IF NOT EXISTS stores(id INTEGER PRIMARY KEY, name TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS consignments(id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id), product_id INTEGER NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL, cost INTEGER NOT NULL, price INTEGER NOT NULL, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));
     CREATE TABLE IF NOT EXISTS store_events(id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id), consignment_id INTEGER REFERENCES consignments(id), kind TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0, amount INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')));''')
+    if 'allow_gifts' not in {row['name'] for row in db.execute('PRAGMA table_info(stores)')}:
+        db.execute('ALTER TABLE stores ADD COLUMN allow_gifts INTEGER NOT NULL DEFAULT 0')
+def permission(value):
+    if not isinstance(value, bool): raise ValueError('Permissão de brindes deve ser sim ou não.')
+    return int(value)
 def amount(value):
     from decimal import Decimal, InvalidOperation
     try:
@@ -48,7 +53,7 @@ class Handler(SimpleHTTPRequestHandler):
             consignments = [dict(r) for r in db.execute('SELECT c.*, p.name, s.name store_name FROM consignments c JOIN products p ON p.id=c.product_id JOIN stores s ON s.id=c.store_id ORDER BY c.id DESC')]
             events = [dict(r) for r in db.execute('SELECT e.*, s.name store_name, p.name product_name, c.cost unit_cost FROM store_events e JOIN stores s ON s.id=e.store_id LEFT JOIN consignments c ON c.id=e.consignment_id LEFT JOIN products p ON p.id=c.product_id ORDER BY e.id')]
             for shipment in consignments:
-                shipment['remaining'] = shipment['quantity'] - sum(e['quantity'] for e in events if e['consignment_id'] == shipment['id'] and e['kind'] in ('sale', 'return'))
+                shipment['remaining'] = shipment['quantity'] - sum(e['quantity'] for e in events if e['consignment_id'] == shipment['id'] and e['kind'] in ('sale', 'return', 'gift'))
             for store in stores:
                 ledger = [e for e in events if e['store_id'] == store['id']]
                 store['charged'] = sum(e['amount'] for e in ledger if e['kind'] == 'sale')
@@ -76,7 +81,11 @@ class Handler(SimpleHTTPRequestHandler):
                 elif self.path == '/api/stores':
                     name = str(data.get('name', '')).strip()
                     if not name: raise ValueError('Informe o nome da loja.')
-                    db.execute('INSERT INTO stores(name) VALUES(?)', (name,))
+                    db.execute('INSERT INTO stores(name,allow_gifts) VALUES(?,?)', (name, permission(data.get('allow_gifts', False))))
+                elif self.path == '/api/store-permissions':
+                    allowed = permission(data['allow_gifts'])
+                    if not db.execute('SELECT id FROM stores WHERE id=?', (data['store_id'],)).fetchone(): raise ValueError('Loja não encontrada.')
+                    db.execute('UPDATE stores SET allow_gifts=? WHERE id=?', (allowed, data['store_id']))
                 elif self.path == '/api/consignments':
                     store = db.execute('SELECT id FROM stores WHERE id=?', (data['store_id'],)).fetchone()
                     product = db.execute('SELECT * FROM products WHERE id=?', (data['product_id'],)).fetchone()
@@ -94,11 +103,13 @@ class Handler(SimpleHTTPRequestHandler):
                         paid = amount(data['amount'])
                         if paid <= 0: raise ValueError('Pagamento deve ser maior que zero.')
                         db.execute("INSERT INTO store_events(store_id,kind,amount,note) VALUES(?,'payment',?,?)", (store['id'], paid, note))
-                    elif kind in ('sale', 'return'):
+                    elif kind in ('sale', 'return', 'gift'):
                         c = db.execute('SELECT * FROM consignments WHERE id=?', (data['consignment_id'],)).fetchone()
                         if not c: raise ValueError('Remessa não encontrada.')
+                        if kind == 'gift' and not db.execute('SELECT allow_gifts FROM stores WHERE id=?', (c['store_id'],)).fetchone()[0]:
+                            raise ValueError('Esta loja não está autorizada a conceder brindes.')
                         q = quantity(data['quantity'])
-                        consumed = db.execute("SELECT COALESCE(SUM(quantity),0) FROM store_events WHERE consignment_id=? AND kind IN ('sale','return')", (c['id'],)).fetchone()[0]
+                        consumed = db.execute("SELECT COALESCE(SUM(quantity),0) FROM store_events WHERE consignment_id=? AND kind IN ('sale','return','gift')", (c['id'],)).fetchone()[0]
                         if q > c['quantity'] - consumed: raise ValueError('Quantidade superior aos canecos disponíveis nesta remessa.')
                         charge = q * c['price'] if kind == 'sale' else 0
                         db.execute('INSERT INTO store_events(store_id,consignment_id,kind,quantity,amount,note) VALUES(?,?,?,?,?,?)', (c['store_id'], c['id'], kind, q, charge, note))

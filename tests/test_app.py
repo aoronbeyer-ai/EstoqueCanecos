@@ -149,6 +149,42 @@ class StockIntegrationTest(unittest.TestCase):
         self.assertEqual(state['stores'][0]['balance'], 3500)
         self.assertTrue(all(e['created_at'] for e in state['expenses']))
 
+    def test_store_gifts_require_permission_and_do_not_charge(self):
+        self.setup_store()
+        self.send()
+        self.store_event('sale', 2)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.store_event('gift', 1)
+        self.assertEqual(caught.exception.code, 400)
+        self.request('/api/store-permissions', dict(store_id=1, allow_gifts=True))
+        self.store_event('gift', 3)
+        state = self.request('/api/state')
+        self.assertEqual(state['consignments'][0]['remaining'], 1)
+        self.assertEqual(state['products'][0]['stock'], 4)
+        self.assertEqual(state['stores'][0]['balance'], 4500)
+        event = state['store_events'][-1]
+        self.assertEqual((event['kind'], event['amount'], event['balance']), ('gift', 0, 4500))
+        self.assertEqual(event['unit_cost'] * event['quantity'], 3000)
+        with self.assertRaises(urllib.error.HTTPError):
+            self.store_event('gift', 2)
+        self.request('/api/store-permissions', dict(store_id=1, allow_gifts=False))
+        with self.assertRaises(urllib.error.HTTPError):
+            self.store_event('gift', 1)
+        self.store_event('return', 1)
+        state = self.request('/api/state')
+        self.assertEqual(state['consignments'][0]['remaining'], 0)
+        self.assertEqual(state['products'][0]['stock'], 5)
+        self.assertEqual(state['stores'][0]['balance'], 4500)
+
+    def test_store_creation_permission_and_invalid_flags(self):
+        self.request('/api/stores', dict(name='Autorizada', allow_gifts=True))
+        self.request('/api/stores', dict(name='Bloqueada'))
+        state = self.request('/api/state')
+        self.assertEqual([s['allow_gifts'] for s in state['stores']], [1, 0])
+        with self.assertRaises(urllib.error.HTTPError):
+            self.request('/api/store-permissions', dict(store_id=1, allow_gifts='false'))
+        self.assertEqual(self.request('/api/state')['stores'][0]['allow_gifts'], 1)
+
     def test_page_is_served(self):
         with urllib.request.urlopen(self.url + '/', timeout=5) as response:
             self.assertIn('Estoque de canecos', response.read().decode())

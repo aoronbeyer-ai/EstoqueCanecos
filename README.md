@@ -34,3 +34,9 @@ Cadastre a loja e registre o envio, com quantidade e preço por unidade combinad
 ## Fretes e dinheiro recebido
 
 Registre os fretes pagos no campo geral. O painel mostra compras (entradas × custo unitário), fretes, total gasto, dinheiro recebido e recebido menos gasto. Entradas são consideradas compras pagas; vendas diretas são consideradas recebidas. Para lojas, apenas pagamentos entram no dinheiro recebido. A receita das vendas confirmadas ainda pendentes fica separada do caixa. O resultado após brindes e fretes desconta custos vendidos, brindes e fretes, enquanto o caixa desconta todas as compras, inclusive unidades ainda em estoque. O histórico mostra a data e hora dos registros; esta versão não permite informar datas retroativas.
+
+## Brindes concedidos pelas lojas e caixas
+
+No cadastro da loja, marque **Permitir brindes sem cobrança** quando autorizado. A permissão também pode ser alterada no resumo por loja. Lojas existentes ficam bloqueadas por padrão após a atualização. Na remessa, escolha **Brinde sem cobrança**: as unidades saem da consignação, não geram dívida ou receita e seu custo entra nos brindes e no resultado após brindes e fretes. Desativar a permissão impede novos brindes, preservando o histórico anterior.
+
+As quantidades continuam registradas em canecos e mostram ao lado as caixas completas de 12 e as unidades restantes (por exemplo, 27 unidades = 2 caixas + 3 canecos). A conversão aparece no dashboard, tabelas, históricos, seleção de remessas e durante a digitação de quantidades.
