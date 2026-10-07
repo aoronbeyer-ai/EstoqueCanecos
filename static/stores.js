@@ -2,7 +2,7 @@ function boxText(n) {
  const boxes=Math.floor(n/12), rest=n%12;
  return `${boxes} ${boxes===1?'caixa':'caixas'}`+(rest?` + ${rest} ${rest===1?'caneco':'canecos'}`:'');
 }
-function units(n) { return `${n} un.<small class="boxes">(${boxText(n)})</small>`; }
+function units(n) { const text=`${n} un.<small class="boxes">(${boxText(n)})</small>`;return n<0?`<span class="negative">${text}</span>`:text; }
 function updateGiftOption() {
  const shipment=storeState?.consignments.find(c=>String(c.id)===document.querySelector('#shipments').value);
  const allowed=storeState?.stores.find(s=>s.id===shipment?.store_id)?.allow_gifts;
