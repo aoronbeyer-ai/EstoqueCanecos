@@ -62,6 +62,39 @@ def read_state():
                 event['balance'] = balance
     return dict(products=products,movements=movements,stores=stores,consignments=consignments,store_events=events,expenses=expenses)
 
+def edit_quantity(db, data):
+    q = quantity(data['quantity'])
+    source = data['source']
+    tables = {'movement': 'movements', 'shipment': 'consignments', 'event': 'store_events'}
+    if source not in tables: raise ValueError('Movimentação inválida.')
+    row = db.execute('SELECT * FROM ' + tables[source] + ' WHERE id=?', (data['id'],)).fetchone()
+    if not row: raise ValueError('Movimentação não encontrada.')
+    if data.get('previous_quantity', row['quantity']) != row['quantity']:
+        raise ValueError('A quantidade foi alterada por outra operação. Recarregue a página antes de editar.')
+    shipment_id = None
+    if source == 'movement':
+        product_id = row['product_id']
+        db.execute('UPDATE movements SET quantity=? WHERE id=?', (q, row['id']))
+    else:
+        shipment_id = row['id'] if source == 'shipment' else row['consignment_id']
+        if source == 'event' and row['kind'] == 'payment': raise ValueError('Pagamentos não possuem quantidade de canecos.')
+        shipment = db.execute('SELECT * FROM consignments WHERE id=?', (shipment_id,)).fetchone()
+        if not shipment: raise ValueError('Remessa não encontrada.')
+        product_id = shipment['product_id']
+        if source == 'shipment' or row['kind'] == 'send':
+            db.execute('UPDATE consignments SET quantity=? WHERE id=?', (q, shipment_id))
+            db.execute("UPDATE store_events SET quantity=? WHERE consignment_id=? AND kind='send'", (q, shipment_id))
+        elif row['kind'] in ('sale','return','gift'):
+            if row['kind'] == 'gift' and q > row['quantity'] and not db.execute('SELECT allow_gifts FROM stores WHERE id=?', (shipment['store_id'],)).fetchone()[0]:
+                raise ValueError('Esta loja não está autorizada a aumentar os brindes.')
+            charge = q * shipment['price'] if row['kind'] == 'sale' else 0
+            db.execute('UPDATE store_events SET quantity=?,amount=? WHERE id=?', (q, charge, row['id']))
+        else: raise ValueError('Movimentação inválida.')
+        sent = db.execute('SELECT quantity FROM consignments WHERE id=?', (shipment_id,)).fetchone()[0]
+        used = db.execute("SELECT COALESCE(SUM(quantity),0) FROM store_events WHERE consignment_id=? AND kind IN ('sale','return','gift')", (shipment_id,)).fetchone()[0]
+        if used > sent: raise ValueError('A remessa não pode ficar menor que as vendas, devoluções e brindes já registrados.')
+    if available(db, product_id) < 0: raise ValueError('A alteração deixaria o estoque disponível negativo.')
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs): super().__init__(*args, directory=str(Path(__file__).parent / 'static'), **kwargs)
     def end_headers(self):
@@ -81,7 +114,9 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.reply(answer_question(read_state(), data.get('question', ''), data.get('filters', {})))
             with connect() as db:
                 db.execute('BEGIN IMMEDIATE')
-                if self.path == '/api/products':
+                if self.path == '/api/movements/update':
+                    edit_quantity(db, data)
+                elif self.path == '/api/products':
                     name = str(data.get('name','')).strip()
                     if not name: raise ValueError('Informe o nome do caneco.')
                     db.execute('INSERT INTO products(name,cost,public_price,choir_price) VALUES(?,?,?,?)',(name,amount(data['cost']),amount(data['public_price']),amount(data['choir_price'])))

@@ -224,6 +224,44 @@ class StockIntegrationTest(unittest.TestCase):
         self.assertEqual(caught.exception.code,400)
         self.assertEqual(before,self.request('/api/state'))
 
+    def test_edit_quantity_preserves_date_price_and_rolls_back_invalid_stock(self):
+        self.register()
+        self.move('entry',10)
+        self.move('public',3)
+        original=self.request('/api/state')['movements'][0]
+        self.request('/api/movements/update',dict(source='movement',id=original['id'],quantity=5,created_at='2000-01-01',price=1))
+        state=self.request('/api/state')
+        self.assertEqual(state['products'][0]['stock'],5)
+        row=state['movements'][0]
+        self.assertEqual((row['created_at'],row['price'],row['cost']),(original['created_at'],2500,1000))
+        for source,id,q in [('movement',row['id'],11),('movement',1,4),('movement',row['id'],0)]:
+            with self.assertRaises(urllib.error.HTTPError):
+                self.request('/api/movements/update',dict(source=source,id=id,quantity=q))
+        self.assertEqual(state,self.request('/api/state'))
+        with self.assertRaises(urllib.error.HTTPError):
+            self.request('/api/movements/update',dict(source='movement',id=row['id'],quantity=4,previous_quantity=3))
+
+    def test_edit_consignment_and_store_sale_preserves_account_dates(self):
+        self.setup_store()
+        self.send()
+        self.store_event('sale',2)
+        before=self.request('/api/state')
+        sale=before['store_events'][-1]
+        self.request('/api/movements/update',dict(source='event',id=sale['id'],quantity=3))
+        state=self.request('/api/state')
+        self.assertEqual(state['stores'][0]['balance'],6750)
+        self.assertEqual(state['store_events'][-1]['created_at'],sale['created_at'])
+        self.request('/api/movements/update',dict(source='shipment',id=1,quantity=4))
+        state=self.request('/api/state')
+        self.assertEqual(state['consignments'][0]['remaining'],1)
+        self.assertEqual(state['store_events'][0]['quantity'],4)
+        self.assertEqual(state['consignments'][0]['created_at'],before['consignments'][0]['created_at'])
+        with self.assertRaises(urllib.error.HTTPError):
+            self.request('/api/movements/update',dict(source='shipment',id=1,quantity=2))
+        self.assertEqual(state,self.request('/api/state'))
+        self.request('/api/movements/update',dict(source='event',id=state['store_events'][0]['id'],quantity=5))
+        self.assertEqual(self.request('/api/state')['consignments'][0]['quantity'],5)
+
     def test_page_is_served(self):
         with urllib.request.urlopen(self.url + '/', timeout=5) as response:
             self.assertIn('Estoque de canecos', response.read().decode())

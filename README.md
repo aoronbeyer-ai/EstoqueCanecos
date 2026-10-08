@@ -17,7 +17,7 @@ Cadastre um caneco e registre uma entrada de estoque inicial. Depois registre as
 
 Lucro das vendas = receita menos custo das unidades vendidas. Resultado após brindes desconta também o custo das unidades presenteadas. Não inclui impostos, taxas ou outras despesas. Nesta versão o custo por modelo é fixo, e o painel acumula todo o histórico.
 
-Esta versão inicial não inclui autenticação, edição ou estorno de movimentações. Use em ambiente privado; não exponha o servidor diretamente à internet.
+Esta versão inicial não inclui autenticação ou estorno de movimentações. Use em ambiente privado; não exponha o servidor diretamente à internet.
 
 ## Testes
 
@@ -70,3 +70,7 @@ Exemplos:
 Datas são interpretadas no fuso de Brasília. As listas usam as datas de registro, e vendas consignadas usam a data da confirmação. São aceitos DD/MM/AAAA, AAAA-MM-DD, meses com ano, hoje, ontem e últimos N dias. Saldo de loja e estoque são atuais; a interface explica quando um indicador não é filtrado retroativamente. Use filtros para indicar sem ambiguidade um produto ou loja.
 
 A interpretação local cobre esses temas e suas variações usuais; não responde a qualquer pergunta irrestrita nem executa instruções para alterar os dados. Perguntas não reconhecidas pedem reformulação.
+
+## Editar quantidades
+
+Use **Editar** ao lado da linha no histórico de movimentações, na conta corrente das lojas ou nas remessas do painel. A janela permite alterar somente a quantidade. Data, produto, tipo, observação, custo e preço unitário permanecem originais. Estoque, receita, custo e saldo da loja são recalculados. Envios editados atualizam a remessa e seu lançamento no extrato juntos. Alterações que deixem estoque negativo ou uma remessa menor que as baixas já registradas são rejeitadas integralmente. Pagamentos e fretes não possuem quantidade e não oferecem essa edição. Quantidade zero não é aceita; esta função não exclui ou estorna registros.
